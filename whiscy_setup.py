@@ -53,7 +53,7 @@ def muscle_msa(config, input_sequence_file, output_alignment_file):
         logger.critical("The path defined for the MUSCLE binary is not correct. Check the configuration file!")
         raise SystemExit
     stdout, stderr = muscle_cline()
-    MultipleSeqAlignment = AlignIO.read(output_alignment_file, "fasta") 
+    MultipleSeqAlignment = AlignIO.read(output_alignment_file, "fasta")
     return MultipleSeqAlignment
 
 
@@ -70,7 +70,7 @@ def msa_to_phylseq(msa, master_sequence, output_file):
     """Converts a MSA to a Phylip Seq file"""
     with open(output_file, 'w') as output_handle:
         # Write header
-        output_handle.write("{0}  {1}{2}".format(len(msa), 
+        output_handle.write("{0}  {1}{2}".format(len(msa),
                                                  len(master_sequence),
                                                  os.linesep))
 
@@ -113,8 +113,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog='whiscy_setup')
     parser.add_argument("pdb_file_name", help="PDB file name (.pdb extension) or PDB code", metavar="pdb_file_name")
     parser.add_argument("chain_id", help="Chain ID to be predicted", metavar="chain_id")
+    parser.add_argument("--output_dir", help="Directory to store the results", metavar="output_dir", default="")
     parser.add_argument('--version', action='version', version='%(prog)s {}'.format(__version__))
     args = parser.parse_args()
+
+    if args.output_dir.endswith("/"):
+      output_dir = args.output_dir
+    else:
+      if args.output_dir:
+        output_dir = "{0}/".format(args.output_dir)
+      else:
+        output_dir = ""
 
     # Load configuration
     config = load_config()
@@ -157,7 +166,7 @@ if __name__ == "__main__":
 
     # Save only the given chain and discard residues with alternative positions
     io = PDBIO()
-    current_pdb_file = "{0}_{1}.pdb".format(pdb_code, chain_id)
+    current_pdb_file = "{0}{1}_{2}.pdb".format(output_dir, pdb_code, chain_id)
     for chain in structure.get_chains():
         if chain.id == chain_id:
             io.set_structure(chain)
@@ -165,21 +174,21 @@ if __name__ == "__main__":
     logger.info("PDB structure with chain {0} saved to {1}".format(chain_id, current_pdb_file))
 
     # Calculate SASA:
-    rsa_output_file = "{0}_{1}.rsa".format(pdb_code, chain_id)
+    rsa_output_file = "{0}{1}_{2}.rsa".format(output_dir, pdb_code, chain_id)
     access.calculate_accessibility(current_pdb_file, rsa_output_file)
     logger.info("Atom accessibility calculated to {0}".format(rsa_output_file))
 
     # Calculate the different accessibility files according to the cutoffs:
     cutoffs = config['CUTOFF']
-    access.create_cutoff_files(rsa_output_file, pdb_code, chain_id, cutoffs)
+    access.create_cutoff_files(rsa_output_file, pdb_code, chain_id, cutoffs, output_dir)
     logger.info("Surface and buried residues calculated")
 
     # Get structure sequence
     master_sequence = pdbutil.get_pdb_sequence(input_pdb_file, chain_id)
-    write_to_fasta("{0}_{1}.fasta".format(filename, chain_id), master_sequence)
+    write_to_fasta("{0}{1}_{2}.fasta".format(output_dir, filename, chain_id), master_sequence)
 
-    hssp_file = "{0}.hssp".format(pdb_code)
-    phylip_file = "{0}_{1}.phylseq".format(pdb_code, chain_id)
+    hssp_file = "{0}{1}.hssp".format(output_dir, pdb_code)
+    phylip_file = "{0}{1}_{2}.phylseq".format(output_dir, pdb_code, chain_id)
 
     if with_pdb_code:
         # Get the HSSP alignment from FTP if pdb code specified
@@ -197,13 +206,13 @@ if __name__ == "__main__":
         except Exception as err:
             logger.error(str(err))
             raise SystemExit
-        
+
         logger.info("HSSP file converted to PHYLIP format")
 
     if not os.path.exists(hssp_file):
         # Run BLASTP if needed
-        blast_output_file = "{0}_{1}_blast.xml".format(filename, chain_id)
-        input_sequence_file = "{0}_{1}.fasta".format(filename, chain_id)
+        blast_output_file = "{0}{1}_{2}_blast.xml".format(output_dir, filename, chain_id)
+        input_sequence_file = "{0}{1}_{2}.fasta".format(output_dir, filename, chain_id)
         if not os.path.exists(blast_output_file):
             logger.info("Please wait while running BLASTP against NCBI servers...")
             ncbi_blast(input_sequence_file, blast_output_file)
@@ -216,18 +225,18 @@ if __name__ == "__main__":
         records = []
         for hit in blast_qresult:
             records.append(hit[0].hit)
-        blast_fasta_file = "{0}_{1}_blast.fasta".format(filename, chain_id)
+        blast_fasta_file = "{0}{1}_{2}_blast.fasta".format(output_dir, filename, chain_id)
         SeqIO.write(records, blast_fasta_file, "fasta")
 
         # Multiple sequence alignment
         logger.info("MSA using MUSCLE...")
-        output_alignment_file = "{0}_{1}_msa.fasta".format(filename, chain_id)
+        output_alignment_file = "{0}{1}_{2}_msa.fasta".format(output_dir, filename, chain_id)
         msa = muscle_msa(config, blast_fasta_file, output_alignment_file)
         logger.info("Done.")
 
         # Convert MSA to Phylipseq
         logger.info("Converting MSA file to Phylseq format...")
-        output_phylseq_file = "{0}_{1}.phylseq".format(filename, chain_id)
+        output_phylseq_file = "{0}{1}_{2}.phylseq".format(output_dir, filename, chain_id)
         msa_to_phylseq(msa, master_sequence, output_phylseq_file)
         logger.info("{} file written".format(output_phylseq_file))
 
@@ -236,12 +245,12 @@ if __name__ == "__main__":
         raise SystemExit
 
     # Calculate protdist
-    protdist_output_file = "{0}_{1}.out".format(filename, chain_id)
+    protdist_output_file = "{0}{1}_{2}.out".format(output_dir, filename, chain_id)
     calculate_protdist(phylip_file, protdist_output_file)
     logger.info("Protdist calculated")
 
     # Generate conversion table file
-    conv_output_file = "{0}_{1}.conv".format(filename, chain_id)
+    conv_output_file = "{0}{1}_{2}.conv".format(output_dir, filename, chain_id)
     pdbutil.map_protein_to_sequence_alignment(current_pdb_file, chain_id, master_sequence, conv_output_file)
     logger.info("Conversion table file generated")
 
